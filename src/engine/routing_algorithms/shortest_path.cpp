@@ -1,4 +1,9 @@
 #include "engine/routing_algorithms/shortest_path.hpp"
+#include "engine/routing_algorithms/routing_base.hpp"
+
+#include <boost/assert.hpp>
+#include <boost/optional.hpp>
+#include <memory>
 
 namespace osrm
 {
@@ -7,24 +12,30 @@ namespace engine
 namespace routing_algorithms
 {
 
+namespace
+{
+
+const static constexpr bool DO_NOT_FORCE_LOOP = false;
+using QueryHeap = SearchEngineData::QueryHeap;
+
 // allows a uturn at the target_phantom
 // searches source forward/reverse -> target forward/reverse
-void ShortestPathRouting::SearchWithUTurn(
-    const std::shared_ptr<const datafacade::BaseDataFacade> facade,
-    QueryHeap &forward_heap,
-    QueryHeap &reverse_heap,
-    QueryHeap &forward_core_heap,
-    QueryHeap &reverse_core_heap,
-    const bool search_from_forward_node,
-    const bool search_from_reverse_node,
-    const bool search_to_forward_node,
-    const bool search_to_reverse_node,
-    const PhantomNode &source_phantom,
-    const PhantomNode &target_phantom,
-    const int total_weight_to_forward,
-    const int total_weight_to_reverse,
-    int &new_total_weight,
-    std::vector<NodeID> &leg_packed_path) const
+template <typename AlgorithmT>
+void searchWithUTurn(const datafacade::ContiguousInternalMemoryDataFacade<AlgorithmT> &facade,
+                     QueryHeap &forward_heap,
+                     QueryHeap &reverse_heap,
+                     QueryHeap &forward_core_heap,
+                     QueryHeap &reverse_core_heap,
+                     const bool search_from_forward_node,
+                     const bool search_from_reverse_node,
+                     const bool search_to_forward_node,
+                     const bool search_to_reverse_node,
+                     const PhantomNode &source_phantom,
+                     const PhantomNode &target_phantom,
+                     const int total_weight_to_forward,
+                     const int total_weight_to_reverse,
+                     int &new_total_weight,
+                     std::vector<NodeID> &leg_packed_path)
 {
     forward_heap.Clear();
     reverse_heap.Clear();
@@ -60,36 +71,24 @@ void ShortestPathRouting::SearchWithUTurn(
     auto is_oneway_source = !(search_from_forward_node && search_from_reverse_node);
     auto is_oneway_target = !(search_to_forward_node && search_to_reverse_node);
     // we only enable loops here if we can't search from forward to backward node
-    auto needs_loop_forwad =
-        is_oneway_source && super::NeedsLoopForward(source_phantom, target_phantom);
+    auto needs_loop_forwad = is_oneway_source && needsLoopForward(source_phantom, target_phantom);
     auto needs_loop_backwards =
-        is_oneway_target && super::NeedsLoopBackwards(source_phantom, target_phantom);
-    if (facade->GetCoreSize() > 0)
-    {
-        forward_core_heap.Clear();
-        reverse_core_heap.Clear();
-        BOOST_ASSERT(forward_core_heap.Size() == 0);
-        BOOST_ASSERT(reverse_core_heap.Size() == 0);
-        super::SearchWithCore(facade,
-                              forward_heap,
-                              reverse_heap,
-                              forward_core_heap,
-                              reverse_core_heap,
-                              new_total_weight,
-                              leg_packed_path,
-                              needs_loop_forwad,
-                              needs_loop_backwards);
-    }
-    else
-    {
-        super::Search(facade,
-                      forward_heap,
-                      reverse_heap,
-                      new_total_weight,
-                      leg_packed_path,
-                      needs_loop_forwad,
-                      needs_loop_backwards);
-    }
+        is_oneway_target && needsLoopBackwards(source_phantom, target_phantom);
+
+    forward_core_heap.Clear();
+    reverse_core_heap.Clear();
+    BOOST_ASSERT(forward_core_heap.Size() == 0);
+    BOOST_ASSERT(reverse_core_heap.Size() == 0);
+    routing_algorithms::search(facade,
+                               forward_heap,
+                               reverse_heap,
+                               forward_core_heap,
+                               reverse_core_heap,
+                               new_total_weight,
+                               leg_packed_path,
+                               needs_loop_forwad,
+                               needs_loop_backwards);
+
     // if no route is found between two parts of the via-route, the entire route becomes
     // invalid. Adding to invalid edge weight sadly doesn't return an invalid edge weight. Here
     // we prevent the possible overflow, faking the addition of infinity + x == infinity
@@ -100,23 +99,24 @@ void ShortestPathRouting::SearchWithUTurn(
 // searches shortest path between:
 // source forward/reverse -> target forward
 // source forward/reverse -> target reverse
-void ShortestPathRouting::Search(const std::shared_ptr<const datafacade::BaseDataFacade> facade,
-                                 QueryHeap &forward_heap,
-                                 QueryHeap &reverse_heap,
-                                 QueryHeap &forward_core_heap,
-                                 QueryHeap &reverse_core_heap,
-                                 const bool search_from_forward_node,
-                                 const bool search_from_reverse_node,
-                                 const bool search_to_forward_node,
-                                 const bool search_to_reverse_node,
-                                 const PhantomNode &source_phantom,
-                                 const PhantomNode &target_phantom,
-                                 const int total_weight_to_forward,
-                                 const int total_weight_to_reverse,
-                                 int &new_total_weight_to_forward,
-                                 int &new_total_weight_to_reverse,
-                                 std::vector<NodeID> &leg_packed_path_forward,
-                                 std::vector<NodeID> &leg_packed_path_reverse) const
+template <typename AlgorithmT>
+void search(const datafacade::ContiguousInternalMemoryDataFacade<AlgorithmT> &facade,
+            QueryHeap &forward_heap,
+            QueryHeap &reverse_heap,
+            QueryHeap &forward_core_heap,
+            QueryHeap &reverse_core_heap,
+            const bool search_from_forward_node,
+            const bool search_from_reverse_node,
+            const bool search_to_forward_node,
+            const bool search_to_reverse_node,
+            const PhantomNode &source_phantom,
+            const PhantomNode &target_phantom,
+            const int total_weight_to_forward,
+            const int total_weight_to_reverse,
+            int &new_total_weight_to_forward,
+            int &new_total_weight_to_reverse,
+            std::vector<NodeID> &leg_packed_path_forward,
+            std::vector<NodeID> &leg_packed_path_reverse)
 {
     if (search_to_forward_node)
     {
@@ -143,32 +143,19 @@ void ShortestPathRouting::Search(const std::shared_ptr<const datafacade::BaseDat
         BOOST_ASSERT(forward_heap.Size() > 0);
         BOOST_ASSERT(reverse_heap.Size() > 0);
 
-        if (facade->GetCoreSize() > 0)
-        {
-            forward_core_heap.Clear();
-            reverse_core_heap.Clear();
-            BOOST_ASSERT(forward_core_heap.Size() == 0);
-            BOOST_ASSERT(reverse_core_heap.Size() == 0);
-            super::SearchWithCore(facade,
-                                  forward_heap,
-                                  reverse_heap,
-                                  forward_core_heap,
-                                  reverse_core_heap,
-                                  new_total_weight_to_forward,
-                                  leg_packed_path_forward,
-                                  super::NeedsLoopForward(source_phantom, target_phantom),
-                                  DO_NOT_FORCE_LOOP);
-        }
-        else
-        {
-            super::Search(facade,
-                          forward_heap,
-                          reverse_heap,
-                          new_total_weight_to_forward,
-                          leg_packed_path_forward,
-                          super::NeedsLoopForward(source_phantom, target_phantom),
-                          DO_NOT_FORCE_LOOP);
-        }
+        forward_core_heap.Clear();
+        reverse_core_heap.Clear();
+        BOOST_ASSERT(forward_core_heap.Size() == 0);
+        BOOST_ASSERT(reverse_core_heap.Size() == 0);
+        routing_algorithms::search(facade,
+                                   forward_heap,
+                                   reverse_heap,
+                                   forward_core_heap,
+                                   reverse_core_heap,
+                                   new_total_weight_to_forward,
+                                   leg_packed_path_forward,
+                                   needsLoopForward(source_phantom, target_phantom),
+                                   DO_NOT_FORCE_LOOP);
     }
 
     if (search_to_reverse_node)
@@ -194,41 +181,28 @@ void ShortestPathRouting::Search(const std::shared_ptr<const datafacade::BaseDat
         }
         BOOST_ASSERT(forward_heap.Size() > 0);
         BOOST_ASSERT(reverse_heap.Size() > 0);
-        if (facade->GetCoreSize() > 0)
-        {
-            forward_core_heap.Clear();
-            reverse_core_heap.Clear();
-            BOOST_ASSERT(forward_core_heap.Size() == 0);
-            BOOST_ASSERT(reverse_core_heap.Size() == 0);
-            super::SearchWithCore(facade,
-                                  forward_heap,
-                                  reverse_heap,
-                                  forward_core_heap,
-                                  reverse_core_heap,
-                                  new_total_weight_to_reverse,
-                                  leg_packed_path_reverse,
-                                  DO_NOT_FORCE_LOOP,
-                                  super::NeedsLoopBackwards(source_phantom, target_phantom));
-        }
-        else
-        {
-            super::Search(facade,
-                          forward_heap,
-                          reverse_heap,
-                          new_total_weight_to_reverse,
-                          leg_packed_path_reverse,
-                          DO_NOT_FORCE_LOOP,
-                          super::NeedsLoopBackwards(source_phantom, target_phantom));
-        }
+        forward_core_heap.Clear();
+        reverse_core_heap.Clear();
+        BOOST_ASSERT(forward_core_heap.Size() == 0);
+        BOOST_ASSERT(reverse_core_heap.Size() == 0);
+        routing_algorithms::search(facade,
+                                   forward_heap,
+                                   reverse_heap,
+                                   forward_core_heap,
+                                   reverse_core_heap,
+                                   new_total_weight_to_reverse,
+                                   leg_packed_path_reverse,
+                                   DO_NOT_FORCE_LOOP,
+                                   needsLoopBackwards(source_phantom, target_phantom));
     }
 }
 
-void ShortestPathRouting::UnpackLegs(const std::shared_ptr<const datafacade::BaseDataFacade> facade,
-                                     const std::vector<PhantomNodes> &phantom_nodes_vector,
-                                     const std::vector<NodeID> &total_packed_path,
-                                     const std::vector<std::size_t> &packed_leg_begin,
-                                     const int shortest_path_length,
-                                     InternalRouteResult &raw_route_data) const
+void unpackLegs(const datafacade::ContiguousInternalMemoryDataFacade<algorithm::CH> &facade,
+                const std::vector<PhantomNodes> &phantom_nodes_vector,
+                const std::vector<NodeID> &total_packed_path,
+                const std::vector<std::size_t> &packed_leg_begin,
+                const int shortest_path_length,
+                InternalRouteResult &raw_route_data)
 {
     raw_route_data.unpacked_path_segments.resize(packed_leg_begin.size() - 1);
 
@@ -239,11 +213,11 @@ void ShortestPathRouting::UnpackLegs(const std::shared_ptr<const datafacade::Bas
         auto leg_begin = total_packed_path.begin() + packed_leg_begin[current_leg];
         auto leg_end = total_packed_path.begin() + packed_leg_begin[current_leg + 1];
         const auto &unpack_phantom_node_pair = phantom_nodes_vector[current_leg];
-        super::UnpackPath(facade,
-                          leg_begin,
-                          leg_end,
-                          unpack_phantom_node_pair,
-                          raw_route_data.unpacked_path_segments[current_leg]);
+        unpackPath(facade,
+                   leg_begin,
+                   leg_end,
+                   unpack_phantom_node_pair,
+                   raw_route_data.unpacked_path_segments[current_leg]);
 
         raw_route_data.source_traversed_in_reverse.push_back(
             (*leg_begin != phantom_nodes_vector[current_leg].source_phantom.forward_segment_id.id));
@@ -253,17 +227,21 @@ void ShortestPathRouting::UnpackLegs(const std::shared_ptr<const datafacade::Bas
     }
 }
 
-void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::BaseDataFacade> facade,
-                                     const std::vector<PhantomNodes> &phantom_nodes_vector,
-                                     const boost::optional<bool> continue_straight_at_waypoint,
-                                     InternalRouteResult &raw_route_data) const
+template <typename AlgorithmT>
+InternalRouteResult
+shortestPathSearchImpl(SearchEngineData &engine_working_data,
+                       const datafacade::ContiguousInternalMemoryDataFacade<AlgorithmT> &facade,
+                       const std::vector<PhantomNodes> &phantom_nodes_vector,
+                       const boost::optional<bool> continue_straight_at_waypoint)
 {
+    InternalRouteResult raw_route_data;
+    raw_route_data.segment_end_coordinates = phantom_nodes_vector;
     const bool allow_uturn_at_waypoint =
         !(continue_straight_at_waypoint ? *continue_straight_at_waypoint
-                                        : facade->GetContinueStraightDefault());
+                                        : facade.GetContinueStraightDefault());
 
-    engine_working_data.InitializeOrClearFirstThreadLocalStorage(facade->GetNumberOfNodes());
-    engine_working_data.InitializeOrClearSecondThreadLocalStorage(facade->GetNumberOfNodes());
+    engine_working_data.InitializeOrClearFirstThreadLocalStorage(facade.GetNumberOfNodes());
+    engine_working_data.InitializeOrClearSecondThreadLocalStorage(facade.GetNumberOfNodes());
 
     QueryHeap &forward_heap = *(engine_working_data.forward_heap_1);
     QueryHeap &reverse_heap = *(engine_working_data.reverse_heap_1);
@@ -311,7 +289,7 @@ void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::Bas
         {
             if (allow_uturn_at_waypoint)
             {
-                SearchWithUTurn(facade,
+                searchWithUTurn(facade,
                                 forward_heap,
                                 reverse_heap,
                                 forward_core_heap,
@@ -343,7 +321,7 @@ void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::Bas
             }
             else
             {
-                Search(facade,
+                search(facade,
                        forward_heap,
                        reverse_heap,
                        forward_core_heap,
@@ -369,7 +347,7 @@ void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::Bas
         {
             raw_route_data.shortest_path_length = INVALID_EDGE_WEIGHT;
             raw_route_data.alternative_path_length = INVALID_EDGE_WEIGHT;
-            return;
+            return raw_route_data;
         }
 
         // we need to figure out how the new legs connect to the previous ones
@@ -472,7 +450,7 @@ void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::Bas
         packed_leg_to_reverse_begin.push_back(total_packed_path_to_reverse.size());
         BOOST_ASSERT(packed_leg_to_reverse_begin.size() == phantom_nodes_vector.size() + 1);
 
-        UnpackLegs(facade,
+        unpackLegs(facade,
                    phantom_nodes_vector,
                    total_packed_path_to_reverse,
                    packed_leg_to_reverse_begin,
@@ -485,13 +463,36 @@ void ShortestPathRouting::operator()(const std::shared_ptr<const datafacade::Bas
         packed_leg_to_forward_begin.push_back(total_packed_path_to_forward.size());
         BOOST_ASSERT(packed_leg_to_forward_begin.size() == phantom_nodes_vector.size() + 1);
 
-        UnpackLegs(facade,
+        unpackLegs(facade,
                    phantom_nodes_vector,
                    total_packed_path_to_forward,
                    packed_leg_to_forward_begin,
                    total_weight_to_forward,
                    raw_route_data);
     }
+
+    return raw_route_data;
+}
+}
+
+InternalRouteResult
+shortestPathSearch(SearchEngineData &engine_working_data,
+                   const datafacade::ContiguousInternalMemoryDataFacade<algorithm::CH> &facade,
+                   const std::vector<PhantomNodes> &phantom_nodes_vector,
+                   const boost::optional<bool> continue_straight_at_waypoint)
+{
+    return shortestPathSearchImpl(
+        engine_working_data, facade, phantom_nodes_vector, continue_straight_at_waypoint);
+}
+
+InternalRouteResult
+shortestPathSearch(SearchEngineData &engine_working_data,
+                   const datafacade::ContiguousInternalMemoryDataFacade<algorithm::CoreCH> &facade,
+                   const std::vector<PhantomNodes> &phantom_nodes_vector,
+                   const boost::optional<bool> continue_straight_at_waypoint)
+{
+    return shortestPathSearchImpl(
+        engine_working_data, facade, phantom_nodes_vector, continue_straight_at_waypoint);
 }
 
 } // namespace routing_algorithms

@@ -1,4 +1,5 @@
 #include "osrm/osrm.hpp"
+#include "engine/algorithm.hpp"
 #include "engine/api/match_parameters.hpp"
 #include "engine/api/nearest_parameters.hpp"
 #include "engine/api/route_parameters.hpp"
@@ -15,7 +16,39 @@ namespace osrm
 
 // Pimpl idiom
 
-OSRM::OSRM(engine::EngineConfig &config) : engine_(std::make_unique<engine::Engine>(config)) {}
+OSRM::OSRM(engine::EngineConfig &config)
+{
+    if (config.algorithm == EngineConfig::Algorithm::CoreCH ||
+        config.algorithm == EngineConfig::Algorithm::CH)
+    {
+        bool corech_compatible =
+            engine::Engine<engine::algorithm::CoreCH>::CheckCompability(config);
+
+        // Activate CoreCH if we can because it is faster
+        if (config.algorithm == EngineConfig::Algorithm::CH && corech_compatible)
+        {
+            config.algorithm = EngineConfig::Algorithm::CoreCH;
+        }
+
+        // throw error if dataset is not usable with CoreCH
+        if (config.algorithm == EngineConfig::Algorithm::CoreCH && !corech_compatible)
+        {
+            throw util::exception("Dataset is not compatible with CoreCH.");
+        }
+    }
+
+    switch (config.algorithm)
+    {
+    case EngineConfig::Algorithm::CH:
+        engine_ = std::make_unique<engine::Engine<engine::algorithm::CH>>(config);
+        break;
+    case EngineConfig::Algorithm::CoreCH:
+        engine_ = std::make_unique<engine::Engine<engine::algorithm::CoreCH>>(config);
+        break;
+    default:
+        util::exception("Algorithm not implemented!");
+    }
+}
 OSRM::~OSRM() = default;
 OSRM::OSRM(OSRM &&) noexcept = default;
 OSRM &OSRM::operator=(OSRM &&) noexcept = default;

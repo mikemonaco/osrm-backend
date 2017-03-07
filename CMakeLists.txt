@@ -35,6 +35,7 @@ if(ENABLE_MASON)
   set(MASON_LUA_VERSION "5.2.4")
   set(MASON_BZIP2_VERSION "1.0.6")
   set(MASON_TBB_VERSION "2017_20161128")
+  set(MASON_LIBSHP_VERSION "1.3.0")
 
   message(STATUS "Enabling mason")
 
@@ -64,9 +65,11 @@ add_definitions(-DOSRM_PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 # include_directories and add_definitions for both
 # this build and for sharing externally via pkg-config
 
-function(add_dependency_includes includes)
-  list(APPEND DEPENDENCIES_INCLUDE_DIRS "${includes}")
-  set(DEPENDENCIES_INCLUDE_DIRS "${DEPENDENCIES_INCLUDE_DIRS}" PARENT_SCOPE)
+function(add_dependency_includes)
+  if(${ARGC} GREATER 0)
+    list(APPEND DEPENDENCIES_INCLUDE_DIRS "${ARGV}")
+    set(DEPENDENCIES_INCLUDE_DIRS "${DEPENDENCIES_INCLUDE_DIRS}" PARENT_SCOPE)
+  endif()
 endfunction(add_dependency_includes)
 
 function(add_dependency_defines defines)
@@ -164,8 +167,8 @@ endif()
 
 # Disable LTO when mason+gcc is detected before testing for / setting any flags.
 # Mason builds libraries with Clang, mixing does not work in the context of lto.
-if(ENABLE_MASON AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(ENABLE_LTO Off)
+if(ENABLE_MASON AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND ENABLE_LTO)
+  set(ENABLE_LTO OFF)
   message(WARNING "Mason and GCC's LTO not work together. Disabling LTO.")
 endif()
 
@@ -433,6 +436,10 @@ if(ENABLE_MASON)
   add_dependency_includes(${MASON_PACKAGE_tbb_INCLUDE_DIRS})
   set(TBB_LIBRARIES ${MASON_PACKAGE_tbb_LDFLAGS})
 
+  mason_use(libshp2 VERSION ${MASON_LIBSHP_VERSION})
+  set(LIBSHAPEFILE_INCLUDE_DIR ${MASON_PACKAGE_libshp2_INCLUDE_DIRS})
+  set(LIBSHAPEFILE_LIBRARY ${MASON_PACKAGE_libshp2_LDFLAGS})
+
   if(NOT MASON_PACKAGE_tbb_LIBRARY_DIRS)
     message(FATAL_ERROR "MASON_PACKAGE_tbb_LIBRARY_DIRS is empty, rpath will not work")
   endif()
@@ -652,10 +659,11 @@ if(BUILD_TOOLS)
   install(TARGETS osrm-io-benchmark DESTINATION bin)
 
   find_package(Shapefile) # package libshp-dev
-  if(Shapefile_FOUND)
+  if(SHAPEFILE_FOUND AND (Boost_VERSION VERSION_GREATER 106000 OR ENABLE_MASON))
     add_executable(osrm-extract-conditionals src/tools/extract-conditionals.cpp $<TARGET_OBJECTS:UTIL>)
     target_include_directories(osrm-extract-conditionals PRIVATE ${LIBSHAPEFILE_INCLUDE_DIR})
-    target_link_libraries(osrm-extract-conditionals ${OSMIUM_LIBRARIES} ${BOOST_BASE_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${LIBSHAPEFILE_LIBRARY})
+    target_link_libraries(osrm-extract-conditionals ${OSMIUM_LIBRARIES} ${BOOST_BASE_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY}
+      ${LIBSHAPEFILE_LIBRARY} ${BZIP2_LIBRARIES} ${ZLIB_LIBRARY} ${EXPAT_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
     install(TARGETS osrm-extract-conditionals DESTINATION bin)
   endif()
 endif()

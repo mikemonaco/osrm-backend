@@ -81,3 +81,53 @@ Feature: Car - Destination only, no passing through
             | e    | a  | de,cd,bc,ab,ab |
             | b    | d  | bc,cd,cd       |
             | d    | b  | cd,bc,bc       |
+
+    Scenario: Car - Routing around a way that becomes destination only
+        Given the node map
+            """
+            b
+             \
+              |
+              e++d++++++c--i
+              |             \
+               \             h--a
+                \            |
+                 \___________g
+            """
+
+        And the ways
+            | nodes | access      | oneway |
+            | ah    |             | no     |
+            | ihg   |             | no     |
+            | eg    |             | no     |
+            | icde  |             | no     |
+            | cde   | destination | no     |
+            | eb    |             | no     |
+
+        When I route I should get
+            | from | to | route           | # |
+            | i    | b  | ihg,eg,eb,eb    | # goes around access=destination, though restricted way starts at two node intersection |
+            | b    | d  | eb,cde,cde      | # ends in restricted way correctly     |
+            | b    | i  | eb,eg,ihg,ihg   | # goes around restricted way correctly |
+
+    Scenario: Car - Routing around a way that becomes destination only
+        Given the node map
+            """
+               a---c---b
+                   +    \
+                   +    |
+                   d    |
+                    \___e
+            """
+
+        And the ways
+            | nodes | access      | oneway |
+            | acbe  |             | no     |
+            | cd    | destination | no     |
+            | de    |             | no     |
+
+        When I route I should get
+            | from | to | route         |
+            | e    | a  | acbe,acbe     |
+            | d    | a  | de,acbe,acbe  |
+            | c    | d  | cd,cd         |

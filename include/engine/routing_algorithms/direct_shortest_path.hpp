@@ -1,15 +1,11 @@
 #ifndef DIRECT_SHORTEST_PATH_HPP
 #define DIRECT_SHORTEST_PATH_HPP
 
-#include <boost/assert.hpp>
-#include <iterator>
-#include <memory>
-
-#include "engine/datafacade/datafacade_base.hpp"
-#include "engine/routing_algorithms/routing_base.hpp"
+#include "engine/algorithm.hpp"
+#include "engine/datafacade/contiguous_internalmem_datafacade.hpp"
+#include "engine/internal_route_result.hpp"
 #include "engine/search_engine_data.hpp"
-#include "util/integer_range.hpp"
-#include "util/timing_util.hpp"
+
 #include "util/typedefs.hpp"
 
 namespace osrm
@@ -25,24 +21,15 @@ namespace routing_algorithms
 /// by the previous route.
 /// This variation is only an optimazation for graphs with slow queries, for example
 /// not fully contracted graphs.
-class DirectShortestPathRouting final : public BasicRoutingInterface
-{
-    using super = BasicRoutingInterface;
-    using QueryHeap = SearchEngineData::QueryHeap;
-    SearchEngineData &engine_working_data;
+InternalRouteResult directShortestPathSearch(
+    SearchEngineData &engine_working_data,
+    const datafacade::ContiguousInternalMemoryDataFacade<algorithm::CH> &facade,
+    const PhantomNodes &phantom_nodes);
 
-  public:
-    DirectShortestPathRouting(SearchEngineData &engine_working_data)
-        : engine_working_data(engine_working_data)
-    {
-    }
-
-    ~DirectShortestPathRouting() {}
-
-    void operator()(const std::shared_ptr<const datafacade::BaseDataFacade> facade,
-                    const std::vector<PhantomNodes> &phantom_nodes_vector,
-                    InternalRouteResult &raw_route_data) const;
-};
+InternalRouteResult directShortestPathSearch(
+    SearchEngineData &engine_working_data,
+    const datafacade::ContiguousInternalMemoryDataFacade<algorithm::CoreCH> &facade,
+    const PhantomNodes &phantom_nodes);
 
 } // namespace routing_algorithms
 } // namespace engine

@@ -74,13 +74,18 @@ local profile = {
     'agricultural',
     'forestry',
     'emergency',
-    'psv'
+    'psv',
+    'customers',
+    'private',
+    'delivery',
+    'destination'
   },
 
   restricted_access_tag_list = Set {
     'private',
     'delivery',
-    'destination'
+    'destination',
+    'customers',
   },
 
   access_tags_hierarchy = Sequence {
@@ -135,6 +140,21 @@ local profile = {
     driveway          = 0.5,
     ["drive-through"] = 0.5,
     ["drive-thru"] = 0.5
+  },
+
+ restricted_highway_whitelist = Set {
+      'motorway',
+      'motorway_link',
+      'trunk',
+      'trunk_link',
+      'primary',
+      'primary_link',
+      'secondary',
+      'secondary_link',
+      'tertiary',
+      'tertiary_link',
+      'residential',
+      'living_street',
   },
 
   route_speeds = {
@@ -259,7 +279,7 @@ function node_function (node, result)
   -- parse access and barrier tags
   local access = find_access_tag(node, profile.access_tags_hierarchy)
   if access then
-    if profile.access_tag_blacklist[access] then
+    if profile.access_tag_blacklist[access] and not profile.restricted_access_tag_list[access] then
       result.barrier = true
     end
   else
@@ -393,11 +413,11 @@ function turn_function (turn)
     else
        turn.weight = turn.duration
     end
-    if properties.weight_name == 'routability' then
-        -- penalize turns from non-local access only segments onto local access only tags
-        if not turn.source_restricted and turn.target_restricted then
-            turn.weight = turn.weight + profile.restricted_penalty
-        end
-    end
+  end
+  if properties.weight_name == 'routability' then
+      -- penalize turns from non-local access only segments onto local access only tags
+      if not turn.source_restricted and turn.target_restricted then
+          turn.weight = turn.weight + profile.restricted_penalty
+      end
   end
 end
