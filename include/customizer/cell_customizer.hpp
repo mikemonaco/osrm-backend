@@ -22,8 +22,8 @@ class CellCustomizer
     template <typename GraphT>
     void Customize(const GraphT &graph,
                    partition::CellStorage &cells,
-                   partition::LevelID level,
-                   partition::CellID id)
+                   LevelID level,
+                   CellID id)
     {
         auto cell = cells.GetCell(level, id);
         auto destinations = cell.GetDestinationNodes();
@@ -87,8 +87,8 @@ class CellCustomizer
     void RelaxNode(const GraphT &graph,
                    const partition::CellStorage &cells,
                    Heap &heap,
-                   partition::LevelID level,
-                   partition::CellID id,
+                   LevelID level,
+                   CellID id,
                    NodeID node,
                    EdgeWeight weight) const
     {

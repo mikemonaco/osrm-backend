@@ -23,7 +23,7 @@ void CellStorageStatistics(const Graph &graph,
 
     for (std::size_t level = 1; level < partition.GetNumberOfLevels(); ++level)
     {
-        std::unordered_map<partition::CellID, std::size_t> cell_nodes;
+        std::unordered_map<CellID, std::size_t> cell_nodes;
         for (auto node : util::irange(0u, graph.GetNumberOfNodes()))
         {
             ++cell_nodes[partition.GetCell(level, node)];
